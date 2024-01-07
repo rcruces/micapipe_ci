@@ -1,2 +1,2 @@
-# micapipe_ci
+# `micapipe` ci
 Continuous Integration of micapipe
