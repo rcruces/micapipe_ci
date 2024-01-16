@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# This script runs micapipe on the same subject on: 
-# multi-session 3T 
-# multi-session 7T
+# This script runs micapipe on the same subject on:
 # SINGLE session 3T
+# multi-session 3T
+# multi-session 7T
 
 # input arguments
 version=$1
@@ -14,16 +14,9 @@ container_img=$3
 bids=/data/mica3/BIDS_CI/rawdata
 fs_lic=/data_/mica3/BIDS_CI/license_fc.txt
 tmp=/tmp
-out=/data/mica3/BIDS_CI/${container}_${version}
+outdir=/data/mica3/BIDS_CI/${container}_${version}
 threads=15
 tracts=100000
-
-# Create command string
-if [[ "$container" == "docker" ]]; then
-  command="docker run -ti --rm -v ${bids}:/bids -v ${out}:/out -v ${tmp}:/tmp -v ${fs_lic}:/opt/licence.txt ${container_img}"
-elif [[ "$container" == "singularity" ]]; then
-  command="singularity run --writable-tmpfs --containall -B ${bids}:/bids -B ${out}:/out -B ${tmp}:/tmp -B ${fs_lic}:/opt/licence.txt ${container_img}"
-fi
 
 # ------------------------------------------------------------------------------
 function run_test(){
@@ -31,15 +24,39 @@ function run_test(){
 
     # Conditional statement for freesurfer/fastsurfer run
     if [[ "$recon" == "freesurfer" ]]; then
-        outdir="${out}_freesurfer"
+        out="${outdir}_freesurfer"
         recon="-freesurfer"
     else
         recon=""
+        out="${outdir}"
     fi
 
     # Create output directory
     mkdir ${out}
-    chmod ${out} 777
+    chmod 777 ${out}
+
+    # Create command string
+    if [[ "$container" == "docker" ]]; then
+      command="docker run -ti --rm -v ${bids}:/bids -v ${out}:/out -v ${tmp}:/tmp -v ${fs_lic}:/opt/licence.txt ${container_img}"
+    elif [[ "$container" == "singularity" ]]; then
+      command="singularity run --writable-tmpfs --containall -B ${bids}:/bids -B ${out}:/out -B ${tmp}:/tmp -B ${fs_lic}:/opt/licence.txt ${container_img}"
+    fi
+
+    # ------------------------------------------------------------------------------
+    # SINGLE session one shot workflow
+    sub=sub-mri
+
+    ${command} \
+    -bids /bids -out /out -fs_licence /opt/licence.txt -threads ${threads} -sub ${sub} \
+    -proc_structural -proc_surf -post_structural -proc_dwi -GD -proc_func -SC -SWM -QC_subj -proc_flair \
+    -atlas economo,aparc -flairScanStr T2w -mainScanStr task-music_bold -NSR -noFIX \
+    -dwi_main /bids/${sub}/dwi/${sub}_acq-b1000_dir-PA_dwi.nii.gz \
+    -regSynth -tracts ${tracts} ${recon}
+
+    # Run fMRI additional acquisition
+    ${command} \
+    -bids /bids -out /out -fs_licence /opt/licence.txt -threads ${threads} -sub ${sub} \
+    -proc_func -mainScanStr fingertap -NSR -noFIX ${recon}
 
     # Session 01 and 02
     for i in 01 02; do
@@ -73,22 +90,6 @@ function run_test(){
     -microstructural_reg /bids/${sub}/${ses}/anat/${sub}_${ses}_acq-inv1_T1map.nii.gz ${recon}
 
     done
-
-    # ------------------------------------------------------------------------------
-    # SINGLE session one shot workflow
-    sub=sub-mri
-
-    ${command} \ 
-    -bids /bids -out /out -fs_licence /opt/licence.txt -threads ${threads} -sub ${sub} \
-    -proc_structural -proc_surf -post_structural -proc_dwi -GD -proc_func -SC -SWM -QC_subj -proc_flair \
-    -atlas economo,aparc -flairScanStr T2w -mainScanStr task-music_bold -NSR -noFIX \
-    -dwi_main /bids/${sub}/dwi/${sub}_acq-b1000_dir-PA_dwi.nii.gz \
-    -regSynth -tracts ${tracts} ${recon}
-
-    # Run fMRI additional acquisition
-    ${command} \
-    -bids /bids -out /out -fs_licence /opt/licence.txt -threads ${threads} -sub ${sub} \
-    -proc_func -mainScanStr fingertap -NSR -noFIX ${recon}
 
     # ------------------------------------------------------------------------------
     # Run Group QC
